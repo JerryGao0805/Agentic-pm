@@ -1,78 +1,91 @@
-from fastapi import FastAPI
+from typing import Literal
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, ValidationError
 
 from app.config import settings
-from app.db import probe_mysql
+from app.db import initialize_database, probe_mysql
+from app.kanban import BoardPayload
+from app.services.board_service import BoardService
+from app.services.chat_service import ChatService
+from app.services.ai_assistant_service import (
+    AIAssistantFormatError,
+    AIAssistantService,
+)
+from app.services.openai_service import (
+    OpenAIConfigError,
+    OpenAIService,
+    OpenAIUpstreamError,
+)
 
-app = FastAPI(title="Project Management MVP Backend")
-
-
-HELLO_PAGE = """
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PM MVP Backend</title>
-    <style>
-      body {
-        margin: 0;
-        padding: 40px 24px;
-        font-family: "Segoe UI", Arial, sans-serif;
-        color: #032147;
-        background: #f7f8fb;
-      }
-      main {
-        max-width: 720px;
-        margin: 0 auto;
-        background: #ffffff;
-        border: 1px solid rgba(3, 33, 71, 0.08);
-        border-radius: 16px;
-        padding: 24px;
-        box-shadow: 0 18px 40px rgba(3, 33, 71, 0.12);
-      }
-      h1 {
-        margin-top: 0;
-      }
-      pre {
-        margin-top: 16px;
-        background: #f7f8fb;
-        border-radius: 12px;
-        padding: 16px;
-        border: 1px solid rgba(3, 33, 71, 0.08);
-        overflow-x: auto;
-      }
-      code {
-        color: #209dd7;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Hello from the PM MVP backend</h1>
-      <p>Backend scaffold is running in Docker.</p>
-      <p>Checking <code>/api/health</code>:</p>
-      <pre id="health-output">Loading...</pre>
-    </main>
-    <script>
-      const output = document.getElementById("health-output");
-      fetch("/api/health")
-        .then(async (response) => {
-          const payload = await response.json();
-          output.textContent = JSON.stringify(payload, null, 2);
-        })
-        .catch((error) => {
-          output.textContent = `Health call failed: ${error.message}`;
-        });
-    </script>
-  </body>
-</html>
-"""
+startup_db_error: str | None = None
 
 
-@app.get("/", response_class=HTMLResponse)
-def read_root() -> str:
-    return HELLO_PAGE
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    global startup_db_error
+    try:
+        initialize_database()
+        startup_db_error = None
+    except Exception as error:
+        startup_db_error = str(error)
+    yield
+
+
+app = FastAPI(title="Project Management MVP Backend", lifespan=lifespan)
+board_service = BoardService()
+chat_service = ChatService()
+openai_service = OpenAIService()
+ai_assistant_service = AIAssistantService(openai_service=openai_service)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AITestRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+
+
+class AITestResponse(BaseModel):
+    model: str
+    reply: str
+
+
+class AIChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class AIChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class AIChatResponse(BaseModel):
+    assistant_message: str
+    board: BoardPayload
+    board_updated: bool
+    board_update_error: str | None = None
+    chat_history: list[AIChatMessage]
+
+
+def _is_authenticated(request: Request) -> bool:
+    return request.cookies.get(settings.auth_cookie_name) == settings.auth_username
+
+
+def _require_authenticated_username(request: Request) -> str:
+    username = request.cookies.get(settings.auth_cookie_name)
+    if username != settings.auth_username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+    return username
 
 
 @app.get("/api/health")
@@ -86,6 +99,170 @@ def health() -> dict:
             "host": settings.db_host,
             "port": settings.db_port,
             "name": settings.db_name,
-            "error": error,
+            "error": error or startup_db_error,
         },
     }
+
+
+@app.get("/api/auth/session")
+def auth_session(request: Request) -> dict:
+    is_authenticated = _is_authenticated(request)
+    return {
+        "authenticated": is_authenticated,
+        "username": settings.auth_username if is_authenticated else None,
+    }
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: LoginRequest, response: Response) -> dict:
+    if (
+        payload.username != settings.auth_username
+        or payload.password != settings.auth_password
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials.",
+        )
+
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=settings.auth_username,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        max_age=60 * 60 * 24 * 7,
+    )
+    return {"authenticated": True, "username": settings.auth_username}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(response: Response) -> dict:
+    response.delete_cookie(key=settings.auth_cookie_name, path="/")
+    return {"authenticated": False, "username": None}
+
+
+@app.get("/api/board", response_model=BoardPayload)
+def get_board(request: Request) -> dict:
+    username = _require_authenticated_username(request)
+    return board_service.get_board(username)
+
+
+@app.put("/api/board", response_model=BoardPayload)
+def update_board(payload: BoardPayload, request: Request) -> dict:
+    username = _require_authenticated_username(request)
+    return board_service.save_board(username, payload)
+
+
+@app.post("/api/ai/test", response_model=AITestResponse)
+def ai_test(payload: AITestRequest, request: Request) -> dict:
+    _require_authenticated_username(request)
+
+    try:
+        reply = openai_service.get_text_response(payload.prompt)
+    except OpenAIConfigError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except OpenAIUpstreamError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+    return {"model": openai_service.model, "reply": reply}
+
+
+@app.post("/api/ai/chat", response_model=AIChatResponse)
+def ai_chat(payload: AIChatRequest, request: Request) -> dict:
+    username = _require_authenticated_username(request)
+    user_message = payload.message.strip()
+    if not user_message:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Message cannot be empty.",
+        )
+
+    board = board_service.get_board(username)
+    history_before = chat_service.list_messages(username)
+    chat_service.append_message(username, "user", user_message)
+
+    prompt_history = [*history_before, {"role": "user", "content": user_message}]
+    try:
+        assistant_output = ai_assistant_service.generate_reply(
+            board=board,
+            chat_history=prompt_history,
+            user_message=user_message,
+        )
+    except OpenAIConfigError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+    except (OpenAIUpstreamError, AIAssistantFormatError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
+
+    assistant_message = assistant_output.assistant_message.strip()
+    if not assistant_message:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI response did not include an assistant message.",
+        )
+
+    board_updated = False
+    board_update_error: str | None = None
+    board_after = board
+    if assistant_output.board is not None:
+        try:
+            board_after = board_service.save_board(username, assistant_output.board)
+            board_updated = True
+        except ValidationError:
+            board_update_error = "AI proposed an invalid board update; update was skipped."
+
+    chat_service.append_message(username, "assistant", assistant_message)
+    chat_history = chat_service.list_messages(username)
+
+    return {
+        "assistant_message": assistant_message,
+        "board": board_after,
+        "board_updated": board_updated,
+        "board_update_error": board_update_error,
+        "chat_history": chat_history,
+    }
+
+
+@app.get("/api/ai/chat/history", response_model=list[AIChatMessage])
+def ai_chat_history(request: Request) -> list[dict[str, str]]:
+    username = _require_authenticated_username(request)
+    return chat_service.list_messages(username)
+
+
+def _resolve_frontend_dist_dir() -> Path | None:
+    configured = Path(settings.frontend_dist_dir)
+    local_fallback = Path(__file__).resolve().parents[2] / "frontend" / "out"
+
+    for candidate in (configured, local_fallback):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+frontend_dist_dir = _resolve_frontend_dist_dir()
+
+if frontend_dist_dir:
+    app.mount("/", StaticFiles(directory=frontend_dist_dir, html=True), name="frontend")
+else:
+    @app.get("/", response_class=HTMLResponse)
+    def frontend_missing() -> str:
+        return """
+        <h1>Frontend build not found</h1>
+        <p>Expected static assets at /app/frontend-dist or frontend/out.</p>
+        """

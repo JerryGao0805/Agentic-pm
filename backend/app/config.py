@@ -19,7 +19,15 @@ class Settings:
     db_port: int = _int_env("DB_PORT", 3306)
     db_user: str = os.getenv("DB_USER", "pm_user")
     db_password: str = os.getenv("DB_PASSWORD", "pm_password")
+    db_admin_user: str = os.getenv("DB_ADMIN_USER", "root")
+    db_admin_password: str = os.getenv("DB_ADMIN_PASSWORD", "root_password")
     db_name: str = os.getenv("DB_NAME", "pm_db")
+    frontend_dist_dir: str = os.getenv("FRONTEND_DIST_DIR", "/app/frontend-dist")
+    auth_username: str = os.getenv("AUTH_USERNAME", "user")
+    auth_password: str = os.getenv("AUTH_PASSWORD", "password")
+    auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "pm_session")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 settings = Settings()

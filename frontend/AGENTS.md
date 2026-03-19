@@ -2,8 +2,8 @@
 
 ## Purpose
 
-This directory contains the current frontend-only Kanban MVP demo built with Next.js.
-It currently runs without backend persistence or authentication.
+This directory contains the current Kanban MVP frontend built with Next.js.
+Sign-in and board data are now API-backed when served by FastAPI.
 
 ## Tech stack
 
@@ -16,18 +16,24 @@ It currently runs without backend persistence or authentication.
 ## Current behavior
 
 - Renders a single Kanban board at `/`.
-- Uses fixed column IDs from `src/lib/kanban.ts`.
-- Supports:
+- Requires sign-in (`user` / `password`) before showing the board.
+- Uses backend auth endpoints (`/api/auth/*`) when available.
+- Loads and saves board data via backend endpoint (`/api/board`) when available.
+- Renders an AI sidebar chat that loads history from `/api/ai/chat/history` and sends prompts to `/api/ai/chat`.
+- Applies AI-returned board updates in-place without a page reload.
+- Keeps a localStorage fallback mode in non-production when backend endpoints are missing (for standalone `next dev`).
+- Uses fixed column IDs from `src/lib/kanban.ts` and supports:
   - renaming column titles
   - adding cards
   - deleting cards
   - dragging cards within and across columns
-- State is local React state only (not persisted).
 
 ## Structure
 
-- `src/app/page.tsx`: app entry; renders `KanbanBoard`.
-- `src/components/KanbanBoard.tsx`: board state + drag/drop orchestration.
+- `src/app/page.tsx`: app entry; renders `AuthGate`.
+- `src/components/AuthGate.tsx`: login/logout gate and auth state handling.
+- `src/components/KanbanBoard.tsx`: board loading/saving + drag/drop orchestration.
+- `src/components/AISidebarChat.tsx`: sidebar chat UI, AI request flow, and local fallback chat mode.
 - `src/components/KanbanColumn.tsx`: droppable column with editable title.
 - `src/components/KanbanCard.tsx`: sortable card item.
 - `src/components/KanbanCardPreview.tsx`: drag overlay preview.
@@ -37,7 +43,7 @@ It currently runs without backend persistence or authentication.
 ## Styling
 
 - Global theme tokens are in `src/app/globals.css`.
-- Core palette already matches project colors:
+- Core palette matches project colors:
   - `--accent-yellow: #ecad0a`
   - `--primary-blue: #209dd7`
   - `--secondary-purple: #753991`
@@ -47,6 +53,8 @@ It currently runs without backend persistence or authentication.
 ## Tests
 
 - Unit tests:
+  - `src/components/AuthGate.test.tsx`
+  - `src/components/AISidebarChat.test.tsx`
   - `src/lib/kanban.test.ts`
   - `src/components/KanbanBoard.test.tsx`
 - E2E tests:
@@ -56,8 +64,8 @@ It currently runs without backend persistence or authentication.
   - `npm run test:e2e`
   - `npm run test:all`
 
-## Notes for upcoming integration
+## Notes
 
-- Board state currently assumes fixed column IDs and card maps; backend schema should preserve this shape.
-- `data-testid` patterns are used by tests (`column-*`, `card-*`), so keep these stable unless tests are updated.
-- Playwright config currently targets `http://127.0.0.1:3000`; this will need updating when frontend is served by FastAPI at port `8000`.
+- Keep `data-testid` patterns stable unless tests are updated (`column-*`, `card-*`).
+- Playwright is currently configured for local Next dev at `http://127.0.0.1:3000`.
+- In Docker/runtime integration, the frontend is served by FastAPI at port `8000`.
