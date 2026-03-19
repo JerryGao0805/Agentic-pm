@@ -27,9 +27,14 @@ RUN uv sync --no-dev
 COPY backend .
 COPY --from=frontend-builder /app/frontend/out /app/frontend-dist
 
+RUN addgroup --system app && adduser --system --ingroup app app && \
+    chown -R app:app /app
+
 ENV PATH="/app/backend/.venv/bin:$PATH" \
     FRONTEND_DIST_DIR="/app/frontend-dist"
 
+USER app
+
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/backend/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

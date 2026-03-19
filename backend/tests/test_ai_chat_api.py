@@ -205,8 +205,9 @@ def test_ai_chat_invalid_board_response_keeps_text_and_skips_update(monkeypatch)
 
 
 def test_ai_chat_returns_503_for_missing_openai_key(monkeypatch) -> None:
+    fake_chat_service = FakeChatService()
     monkeypatch.setattr(main_module, "board_service", FakeBoardService())
-    monkeypatch.setattr(main_module, "chat_service", FakeChatService())
+    monkeypatch.setattr(main_module, "chat_service", fake_chat_service)
     monkeypatch.setattr(
         main_module,
         "ai_assistant_service",
@@ -219,6 +220,7 @@ def test_ai_chat_returns_503_for_missing_openai_key(monkeypatch) -> None:
 
     assert response.status_code == 503
     assert response.json() == {"detail": "OPENAI_API_KEY is not configured."}
+    assert fake_chat_service.messages == [], "User message must not be saved when AI call fails"
 
 
 def test_ai_chat_returns_502_for_invalid_ai_schema(monkeypatch) -> None:

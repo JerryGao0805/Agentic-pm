@@ -5,9 +5,28 @@ from typing import Any
 
 import mysql.connector
 from mysql.connector import Error, IntegrityError
+from mysql.connector.pooling import MySQLConnectionPool
 
 from app.config import settings
 from app.kanban import default_board
+
+_pool: MySQLConnectionPool | None = None
+
+
+def _get_pool() -> MySQLConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = MySQLConnectionPool(
+            pool_name="pm_pool",
+            pool_size=5,
+            pool_reset_session=True,
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            database=settings.db_name,
+        )
+    return _pool
 
 
 def _connect(*, database: str | None, use_admin_credentials: bool) -> Any:
@@ -28,6 +47,11 @@ def _connect(*, database: str | None, use_admin_credentials: bool) -> Any:
 
 
 def get_connection(database: str | None = None) -> Any:
+    if database == settings.db_name:
+        try:
+            return _get_pool().get_connection()
+        except Error:
+            pass
     return _connect(database=database, use_admin_credentials=False)
 
 

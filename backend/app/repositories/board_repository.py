@@ -24,11 +24,17 @@ class BoardRepository:
             if row is None:
                 board = default_board()
                 cursor.execute(
-                    "INSERT INTO boards (user_id, board_json) VALUES (%s, CAST(%s AS JSON))",
+                    """
+                    INSERT INTO boards (user_id, board_json)
+                    VALUES (%s, CAST(%s AS JSON))
+                    ON DUPLICATE KEY UPDATE user_id = user_id
+                    """,
                     (user_id, json.dumps(board)),
                 )
                 connection.commit()
-                return board
+                cursor.execute("SELECT board_json FROM boards WHERE user_id = %s", (user_id,))
+                reloaded = cursor.fetchone()
+                return self._decode_board_json(reloaded[0]) if reloaded else board
 
             connection.commit()
             return self._decode_board_json(row[0])

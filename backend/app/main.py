@@ -192,7 +192,6 @@ def ai_chat(payload: AIChatRequest, request: Request) -> dict:
 
     board = board_service.get_board(username)
     history_before = chat_service.list_messages(username)
-    chat_service.append_message(username, "user", user_message)
 
     prompt_history = [*history_before, {"role": "user", "content": user_message}]
     try:
@@ -229,6 +228,7 @@ def ai_chat(payload: AIChatRequest, request: Request) -> dict:
         except ValidationError:
             board_update_error = "AI proposed an invalid board update; update was skipped."
 
+    chat_service.append_message(username, "user", user_message)
     chat_service.append_message(username, "assistant", assistant_message)
     chat_history = chat_service.list_messages(username)
 

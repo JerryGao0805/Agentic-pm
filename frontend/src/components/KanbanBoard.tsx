@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -159,7 +160,8 @@ export const KanbanBoard = () => {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
-    })
+    }),
+    useSensor(KeyboardSensor)
   );
 
   const cardsById = useMemo(() => board?.cards ?? {}, [board]);
@@ -328,7 +330,7 @@ export const KanbanBoard = () => {
                 <KanbanColumn
                   key={column.id}
                   column={column}
-                  cards={column.cardIds.map((cardId) => board.cards[cardId])}
+                  cards={column.cardIds.map((cardId) => board.cards[cardId]).filter(Boolean)}
                   onRename={handleRenameColumn}
                   onAddCard={handleAddCard}
                   onDeleteCard={handleDeleteCard}

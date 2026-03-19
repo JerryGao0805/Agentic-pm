@@ -1,10 +1,19 @@
 from typing import Any
 
 from fastapi.testclient import TestClient
+from mysql.connector import Error as MySQLError
 
 import app.main as main_module
 from app.config import settings
 from app.kanban import default_board
+
+
+class FailingBoardService:
+    def get_board(self, username: str) -> dict[str, Any]:
+        raise MySQLError("Connection refused")
+
+    def save_board(self, username: str, board: Any) -> dict[str, Any]:
+        raise MySQLError("Connection refused")
 
 
 class FakeBoardService:
@@ -75,3 +84,25 @@ def test_put_board_saves_valid_payload(monkeypatch) -> None:
     assert response.json()["columns"][0]["title"] == "Ideas"
     assert fake_service.saved_payload is not None
     assert fake_service.saved_payload["columns"][0]["title"] == "Ideas"
+
+
+def test_get_board_returns_500_on_database_error(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "board_service", FailingBoardService())
+
+    with TestClient(main_module.app, raise_server_exceptions=False) as client:
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
+        response = client.get("/api/board")
+
+    assert response.status_code == 500
+
+
+def test_put_board_returns_500_on_database_error(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "board_service", FailingBoardService())
+
+    board = default_board()
+
+    with TestClient(main_module.app, raise_server_exceptions=False) as client:
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
+        response = client.put("/api/board", json=board)
+
+    assert response.status_code == 500

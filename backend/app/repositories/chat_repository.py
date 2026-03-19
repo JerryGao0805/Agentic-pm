@@ -20,10 +20,13 @@ class ChatRepository:
 
             cursor.execute(
                 """
-                SELECT role, content
-                FROM chat_messages
-                WHERE user_id = %s
-                ORDER BY id ASC
+                SELECT role, content FROM (
+                    SELECT role, content, id
+                    FROM chat_messages
+                    WHERE user_id = %s
+                    ORDER BY id DESC
+                    LIMIT 50
+                ) recent ORDER BY id ASC
                 """,
                 (user_id,),
             )
