@@ -17,6 +17,7 @@ type SessionResponse = {
 
 const canUseLocalFallback = process.env.NODE_ENV !== "production";
 
+// Dev-only local auth fallback. Trivially spoofable via localStorage — not for production use.
 const readLocalAuth = () => {
   if (typeof window === "undefined") {
     return false;
@@ -137,10 +138,15 @@ export const AuthGate = () => {
       return;
     }
 
-    await fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    });
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Logout fetch failed (e.g. network error). Clear client state anyway
+      // since the cookie is handled client-side.
+    }
     setAuthState("unauthenticated");
   };
 

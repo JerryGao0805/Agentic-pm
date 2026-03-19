@@ -26,7 +26,7 @@ class FakeChatService:
     def __init__(self) -> None:
         self.messages: list[dict[str, str]] = []
 
-    def list_messages(self, username: str) -> list[dict[str, str]]:
+    def list_messages(self, username: str, **kwargs) -> list[dict[str, str]]:
         return deepcopy(self.messages)
 
     def append_message(self, username: str, role: str, content: str) -> None:

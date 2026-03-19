@@ -37,7 +37,16 @@ const readLocalBoard = (): BoardData => {
   }
 
   try {
-    return JSON.parse(raw) as BoardData;
+    const parsed = JSON.parse(raw) as BoardData;
+    if (
+      !parsed ||
+      !Array.isArray(parsed.columns) ||
+      typeof parsed.cards !== "object" ||
+      parsed.cards === null
+    ) {
+      return cloneInitialBoard();
+    }
+    return parsed;
   } catch {
     return cloneInitialBoard();
   }
@@ -58,6 +67,7 @@ export const KanbanBoard = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +96,14 @@ export const KanbanBoard = () => {
         const payload = (await response.json()) as BoardData;
         if (!active) {
           return;
+        }
+        if (
+          !payload ||
+          !Array.isArray(payload.columns) ||
+          typeof payload.cards !== "object" ||
+          payload.cards === null
+        ) {
+          throw new Error("Invalid board data from API.");
         }
         setBoardMode("api");
         setBoard(payload);
@@ -150,7 +168,7 @@ export const KanbanBoard = () => {
         }
 
         const nextBoard = updater(previousBoard);
-        void persistBoard(nextBoard);
+        queueMicrotask(() => void persistBoard(nextBoard));
         return nextBoard;
       });
     },
@@ -167,7 +185,7 @@ export const KanbanBoard = () => {
   const cardsById = useMemo(() => board?.cards ?? {}, [board]);
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveCardId(event.active.id as string);
+    setActiveCardId(String(event.active.id));
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -182,8 +200,8 @@ export const KanbanBoard = () => {
       ...previousBoard,
       columns: moveCard(
         previousBoard.columns,
-        active.id as string,
-        over.id as string
+        String(active.id),
+        String(over.id)
       ),
     }));
   };
@@ -325,17 +343,19 @@ export const KanbanBoard = () => {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
-            <section className="grid gap-6 lg:grid-cols-5">
-              {board.columns.map((column) => (
-                <KanbanColumn
-                  key={column.id}
-                  column={column}
-                  cards={column.cardIds.map((cardId) => board.cards[cardId]).filter(Boolean)}
-                  onRename={handleRenameColumn}
-                  onAddCard={handleAddCard}
-                  onDeleteCard={handleDeleteCard}
-                />
-              ))}
+            <section className="overflow-x-auto">
+              <div className="flex gap-6 lg:grid lg:grid-cols-5">
+                {board.columns.map((column) => (
+                  <KanbanColumn
+                    key={column.id}
+                    column={column}
+                    cards={column.cardIds.map((cardId) => board.cards[cardId]).filter(Boolean)}
+                    onRename={handleRenameColumn}
+                    onAddCard={handleAddCard}
+                    onDeleteCard={handleDeleteCard}
+                  />
+                ))}
+              </div>
             </section>
             <DragOverlay>
               {activeCard ? (
@@ -346,7 +366,18 @@ export const KanbanBoard = () => {
             </DragOverlay>
           </DndContext>
 
-          <AISidebarChat board={board} onBoardUpdate={handleAIBoardUpdate} />
+          <div className="xl:block">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen((open) => !open)}
+              className="mb-4 rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)] xl:hidden"
+            >
+              {isSidebarOpen ? "Hide AI Copilot" : "Show AI Copilot"}
+            </button>
+            <div className={`${isSidebarOpen ? "block" : "hidden"} xl:block`}>
+              <AISidebarChat board={board} onBoardUpdate={handleAIBoardUpdate} />
+            </div>
+          </div>
         </div>
       </main>
     </div>

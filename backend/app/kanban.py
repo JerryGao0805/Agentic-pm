@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 FIXED_COLUMN_IDS = (
     "col-backlog",
@@ -14,12 +14,18 @@ FIXED_COLUMN_IDS = (
 )
 
 
+# M7: Shared ChatRole type
+ChatRole = Literal["user", "assistant"]
+
+_MAX_CARDS_PER_BOARD = 200
+
+
 class CardPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    title: str
-    details: str
+    title: str = Field(max_length=500)
+    details: str = Field(max_length=5000)
 
 
 class ColumnPayload(BaseModel):
@@ -38,6 +44,11 @@ class BoardPayload(BaseModel):
 
     @model_validator(mode="after")
     def _validate_kanban_structure(self) -> BoardPayload:
+        if len(self.cards) > _MAX_CARDS_PER_BOARD:
+            raise ValueError(
+                f"Board cannot have more than {_MAX_CARDS_PER_BOARD} cards."
+            )
+
         column_ids = [column.id for column in self.columns]
         unique_column_ids = set(column_ids)
 

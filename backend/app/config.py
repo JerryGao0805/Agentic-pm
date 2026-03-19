@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 import hashlib
 import hmac
+import logging
 import os
 import secrets
+
+logger = logging.getLogger(__name__)
 
 
 def _int_env(name: str, default: int) -> int:
@@ -32,6 +35,15 @@ class Settings:
     session_secret: str = os.getenv("SESSION_SECRET", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    cookie_secure: bool = os.getenv("COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "")
+
+    def __post_init__(self) -> None:
+        if self.auth_password == "password":
+            logger.warning(
+                "AUTH_PASSWORD is set to the default value 'password'. "
+                "Please set a strong password via the AUTH_PASSWORD environment variable."
+            )
 
     def _get_secret_key(self) -> str:
         if self.session_secret:

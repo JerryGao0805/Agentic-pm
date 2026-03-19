@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from app.config import settings
 from app.db import ensure_user_id, get_connection
-
-ChatRole = Literal["user", "assistant"]
+from app.kanban import ChatRole
 
 
 class ChatRepository:
-    def list_messages(self, username: str) -> list[dict[str, str]]:
+    def list_messages(
+        self, username: str, *, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, str]]:
         connection = None
         cursor = None
         try:
@@ -25,10 +26,10 @@ class ChatRepository:
                     FROM chat_messages
                     WHERE user_id = %s
                     ORDER BY id DESC
-                    LIMIT 50
+                    LIMIT %s OFFSET %s
                 ) recent ORDER BY id ASC
                 """,
-                (user_id,),
+                (user_id, limit, offset),
             )
             rows = cursor.fetchall()
             connection.commit()

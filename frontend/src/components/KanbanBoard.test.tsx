@@ -46,7 +46,7 @@ describe("KanbanBoard", () => {
     await screen.findAllByTestId(/column-/i);
 
     const column = getFirstColumn();
-    const input = within(column).getByLabelText("Column title");
+    const input = within(column).getByLabelText(/^Column title:/i);
     await userEvent.clear(input);
     await userEvent.type(input, "New Name");
 

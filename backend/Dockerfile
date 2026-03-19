@@ -21,8 +21,8 @@ WORKDIR /app/backend
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /uvx /bin/
 
-COPY backend/pyproject.toml ./pyproject.toml
-RUN uv sync --no-dev
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev
 
 COPY backend .
 COPY --from=frontend-builder /app/frontend/out /app/frontend-dist

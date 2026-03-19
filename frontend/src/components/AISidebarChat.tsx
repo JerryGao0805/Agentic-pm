@@ -322,7 +322,13 @@ export const AISidebarChat = ({ board, onBoardUpdate }: AISidebarChatProps) => {
       const nextMessages = parseMessages(payload.chat_history);
       setMessages(nextMessages);
 
-      if (payload.board_updated) {
+      if (
+        payload.board_updated &&
+        payload.board &&
+        Array.isArray(payload.board.columns) &&
+        typeof payload.board.cards === "object" &&
+        payload.board.cards !== null
+      ) {
         onBoardUpdate(payload.board, { persist: false });
       }
       setBoardWarning(payload.board_update_error);

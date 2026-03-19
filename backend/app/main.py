@@ -1,11 +1,15 @@
+import time
+from collections import defaultdict
 from typing import Literal
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse
+import mysql.connector
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
+from starlette.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import initialize_database, probe_mysql
@@ -24,6 +28,24 @@ from app.services.openai_service import (
 
 startup_db_error: str | None = None
 
+# M3: Simple in-memory rate limiter for login endpoint
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_LOGIN_RATE_LIMIT = 10
+_LOGIN_RATE_WINDOW = 60  # seconds
+
+
+def _check_login_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    attempts = _login_attempts[client_ip]
+    # Prune old entries
+    _login_attempts[client_ip] = [t for t in attempts if now - t < _LOGIN_RATE_WINDOW]
+    if len(_login_attempts[client_ip]) >= _LOGIN_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again later.",
+        )
+    _login_attempts[client_ip].append(now)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -37,6 +59,26 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Project Management MVP Backend", lifespan=lifespan)
+
+# M2: CORS configuration
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+# M5: Database error handler
+@app.exception_handler(mysql.connector.Error)
+async def mysql_error_handler(request: Request, exc: mysql.connector.Error) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database temporarily unavailable."},
+    )
+
 board_service = BoardService()
 chat_service = ChatService()
 openai_service = OpenAIService()
@@ -80,6 +122,11 @@ def _is_authenticated(request: Request) -> bool:
 
 
 def _require_authenticated_username(request: Request) -> str:
+    if startup_db_error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable.",
+        )
     token = request.cookies.get(settings.auth_cookie_name)
     username = settings.verify_session(token or "")
     if username is None:
@@ -95,13 +142,8 @@ def health() -> dict:
     is_connected, error = probe_mysql()
     return {
         "status": "ok" if is_connected else "degraded",
-        "service": settings.app_name,
         "database": {
             "connected": is_connected,
-            "host": settings.db_host,
-            "port": settings.db_port,
-            "name": settings.db_name,
-            "error": error or startup_db_error,
         },
     }
 
@@ -116,7 +158,8 @@ def auth_session(request: Request) -> dict:
 
 
 @app.post("/api/auth/login")
-def auth_login(payload: LoginRequest, response: Response) -> dict:
+def auth_login(payload: LoginRequest, request: Request, response: Response) -> dict:
+    _check_login_rate_limit(request.client.host if request.client else "unknown")
     if (
         payload.username != settings.auth_username
         or payload.password != settings.auth_password
@@ -130,6 +173,7 @@ def auth_login(payload: LoginRequest, response: Response) -> dict:
         key=settings.auth_cookie_name,
         value=settings.sign_session(settings.auth_username),
         httponly=True,
+        secure=settings.cookie_secure,
         samesite="lax",
         path="/",
         max_age=60 * 60 * 24 * 7,
@@ -146,7 +190,13 @@ def auth_logout(response: Response) -> dict:
 @app.get("/api/board", response_model=BoardPayload)
 def get_board(request: Request) -> dict:
     username = _require_authenticated_username(request)
-    return board_service.get_board(username)
+    try:
+        return board_service.get_board(username)
+    except ValidationError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stored board data is invalid. Please contact support.",
+        )
 
 
 @app.put("/api/board", response_model=BoardPayload)
@@ -242,9 +292,13 @@ def ai_chat(payload: AIChatRequest, request: Request) -> dict:
 
 
 @app.get("/api/ai/chat/history", response_model=list[AIChatMessage])
-def ai_chat_history(request: Request) -> list[dict[str, str]]:
+def ai_chat_history(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, str]]:
     username = _require_authenticated_username(request)
-    return chat_service.list_messages(username)
+    return chat_service.list_messages(username, limit=limit, offset=offset)
 
 
 def _resolve_frontend_dist_dir() -> Path | None:

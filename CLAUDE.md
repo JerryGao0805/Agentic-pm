@@ -77,3 +77,4 @@ npm run lint           # eslint
 - `OPENAI_API_KEY` lives in root `.env`. Model is `gpt-4o-mini`.
 - MySQL exposed on host port 3307 (maps to container 3306).
 - Planning docs live in `docs/`. Review `docs/PLAN.md` for implementation context.
+
