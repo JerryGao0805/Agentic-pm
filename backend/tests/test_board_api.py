@@ -36,7 +36,7 @@ def test_get_board_returns_board_for_authenticated_user(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "board_service", FakeBoardService())
 
     with TestClient(main_module.app) as client:
-        client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
         response = client.get("/api/board")
 
     assert response.status_code == 200
@@ -53,7 +53,7 @@ def test_put_board_rejects_invalid_structure(monkeypatch) -> None:
     invalid_board["columns"][0]["id"] = "col-unknown"
 
     with TestClient(main_module.app) as client:
-        client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
         response = client.put("/api/board", json=invalid_board)
 
     assert response.status_code == 422
@@ -68,7 +68,7 @@ def test_put_board_saves_valid_payload(monkeypatch) -> None:
     board["columns"][0]["title"] = "Ideas"
 
     with TestClient(main_module.app) as client:
-        client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
         response = client.put("/api/board", json=board)
 
     assert response.status_code == 200

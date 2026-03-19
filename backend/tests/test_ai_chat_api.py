@@ -69,7 +69,7 @@ class FailingAIAssistantService:
 
 
 def _with_auth_cookie(client: TestClient) -> None:
-    client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+    client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
 
 
 def test_ai_chat_requires_authentication(monkeypatch) -> None:

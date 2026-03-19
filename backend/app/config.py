@@ -1,5 +1,8 @@
 from dataclasses import dataclass
+import hashlib
+import hmac
 import os
+import secrets
 
 
 def _int_env(name: str, default: int) -> int:
@@ -26,8 +29,28 @@ class Settings:
     auth_username: str = os.getenv("AUTH_USERNAME", "user")
     auth_password: str = os.getenv("AUTH_PASSWORD", "password")
     auth_cookie_name: str = os.getenv("AUTH_COOKIE_NAME", "pm_session")
+    session_secret: str = os.getenv("SESSION_SECRET", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    def _get_secret_key(self) -> str:
+        if self.session_secret:
+            return self.session_secret
+        return self.auth_password + self.db_password
+
+    def sign_session(self, username: str) -> str:
+        key = self._get_secret_key().encode()
+        signature = hmac.new(key, username.encode(), hashlib.sha256).hexdigest()
+        return f"{username}:{signature}"
+
+    def verify_session(self, token: str) -> str | None:
+        if not token or ":" not in token:
+            return None
+        username, signature = token.rsplit(":", 1)
+        expected = self.sign_session(username)
+        if hmac.compare_digest(token, expected):
+            return username
+        return None
 
 
 settings = Settings()

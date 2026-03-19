@@ -37,7 +37,7 @@ def test_ai_test_returns_reply_when_authenticated(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "openai_service", fake_service)
 
     with TestClient(main_module.app) as client:
-        client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
         response = client.post("/api/ai/test", json={"prompt": "What is 2+2?"})
 
     assert response.status_code == 200
@@ -53,7 +53,7 @@ def test_ai_test_handles_missing_key(monkeypatch) -> None:
     )
 
     with TestClient(main_module.app) as client:
-        client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
         response = client.post("/api/ai/test", json={"prompt": "2+2"})
 
     assert response.status_code == 503
@@ -68,7 +68,7 @@ def test_ai_test_handles_upstream_error(monkeypatch) -> None:
     )
 
     with TestClient(main_module.app) as client:
-        client.cookies.set(settings.auth_cookie_name, settings.auth_username)
+        client.cookies.set(settings.auth_cookie_name, settings.sign_session(settings.auth_username))
         response = client.post("/api/ai/test", json={"prompt": "2+2"})
 
     assert response.status_code == 502

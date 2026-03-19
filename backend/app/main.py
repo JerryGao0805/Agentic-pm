@@ -75,12 +75,14 @@ class AIChatResponse(BaseModel):
 
 
 def _is_authenticated(request: Request) -> bool:
-    return request.cookies.get(settings.auth_cookie_name) == settings.auth_username
+    token = request.cookies.get(settings.auth_cookie_name)
+    return settings.verify_session(token or "") is not None
 
 
 def _require_authenticated_username(request: Request) -> str:
-    username = request.cookies.get(settings.auth_cookie_name)
-    if username != settings.auth_username:
+    token = request.cookies.get(settings.auth_cookie_name)
+    username = settings.verify_session(token or "")
+    if username is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
@@ -126,7 +128,7 @@ def auth_login(payload: LoginRequest, response: Response) -> dict:
 
     response.set_cookie(
         key=settings.auth_cookie_name,
-        value=settings.auth_username,
+        value=settings.sign_session(settings.auth_username),
         httponly=True,
         samesite="lax",
         path="/",

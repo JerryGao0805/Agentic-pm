@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { KanbanBoard } from "@/components/KanbanBoard";
 
 const LOCAL_AUTH_KEY = "pm-local-authenticated";
-const AUTH_USERNAME = "user";
-const AUTH_PASSWORD = "password";
+const DEV_USERNAME = process.env.NODE_ENV !== "production" ? "user" : "";
+const DEV_PASSWORD = process.env.NODE_ENV !== "production" ? "password" : "";
 
 type AuthMode = "api" | "local";
 type AuthState = "loading" | "authenticated" | "unauthenticated";
@@ -98,7 +98,7 @@ export const AuthGate = () => {
     setIsSubmitting(true);
     try {
       if (authMode === "local") {
-        if (trimmedUsername === AUTH_USERNAME && password === AUTH_PASSWORD) {
+        if (trimmedUsername === DEV_USERNAME && password === DEV_PASSWORD) {
           window.localStorage.setItem(LOCAL_AUTH_KEY, "true");
           setAuthState("authenticated");
           setPassword("");
@@ -164,9 +164,11 @@ export const AuthGate = () => {
           <h1 className="mt-3 font-display text-3xl font-semibold text-[var(--navy-dark)]">
             Sign in
           </h1>
-          <p className="mt-3 text-sm leading-6 text-[var(--gray-text)]">
-            Use credentials: <strong>user</strong> / <strong>password</strong>
-          </p>
+          {canUseLocalFallback && DEV_USERNAME ? (
+            <p className="mt-3 text-sm leading-6 text-[var(--gray-text)]">
+              Dev mode credentials: <strong>{DEV_USERNAME}</strong> / <strong>{DEV_PASSWORD}</strong>
+            </p>
+          ) : null}
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
               <label
@@ -222,7 +224,7 @@ export const AuthGate = () => {
       <div className="mx-auto max-w-[1500px] px-6 pt-6">
         <div className="flex items-center justify-between rounded-2xl border border-[var(--stroke)] bg-white px-4 py-3 shadow-[var(--shadow)]">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
-            Signed in as <span className="text-[var(--navy-dark)]">{AUTH_USERNAME}</span>
+            Signed in as <span className="text-[var(--navy-dark)]">{username || DEV_USERNAME}</span>
           </p>
           <button
             type="button"
